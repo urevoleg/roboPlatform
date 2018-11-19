@@ -12,11 +12,12 @@
 //--------------------- EEPROM ------------------------------------------------------
 #include <EEPROMex.h>
 // все настраиваемые параметры будем хранить как float
-byte addressFilter = 0;                   // занимает 4Б
-byte addressBrightness = 5;               // занимает 4Б
+byte addressFilter = 0;                    // занимает 4Б
+byte addressBrightness = 5;                // занимает 4Б
 byte addressDistance = 10;                 // занимает 4Б
 byte addressMotorSpeed = 15;               // занимает 4Б
 byte addressForwardSec = 20;               // занимает 4Б
+byte addressLineSensorThresholdValue = 25;      // занимает 4Б
 //--------------------- EEPROM ------------------------------------------------------
 //--------------------- Simple lowpass ----------------------------------------------
 #include <MeanFilter.h>
@@ -58,7 +59,6 @@ byte s7[8] = {0b00000, 0b00000, 0b00100, 0b10101, 0b01110, 0b10101, 0b00100, 0b0
 byte s8[8] = {0b00000, 0b00000, 0b00000, 0b00100, 0b10101, 0b01110, 0b10101, 0b00100};
 // ------------------------------------- СИМВОЛЫ -------------------------------------
 // -------------------- LCD1602 ------------------------------------------------------
-
 byte butCentrePin = 4;                   // пин подключения центральной кнопки
 byte butLeftPin = 2;                     // пин подключения левой кнопки
 byte butRightPin = 3;                    // пин подключения правой кнопки
@@ -95,20 +95,21 @@ bool robotStartFlag = false;             // флаг запуска какого
    А к управляющему сигналу ШИМ подключаем порт с ШИМ
    В результате имеем 2 упр сигнала для каждого мотора
 */
-byte leftMotorDirPin = 7;                // порт управления направлением вращения левого мотора
-byte leftMotorPwmPin = 6;                // порт управления скоростью вращения левого мотора
-byte rightMotorDirPin = 8;               // порт управления направлением вращения правого мотора
-byte rightMotorPwmPin = 9;               // порт управления скоростью вращения правого мотора
+byte leftMotorDirPin = 7;                                     // порт управления направлением вращения левого мотора
+byte leftMotorPwmPin = 6;                                     // порт управления скоростью вращения левого мотора
+byte rightMotorDirPin = 8;                                    // порт управления направлением вращения правого мотора
+byte rightMotorPwmPin = 9;                                    // порт управления скоростью вращения правого мотора
 
-byte leftLineSensor = A0;                // порт подключения левого ИК датчика линии
-byte centreLineSensor = A1;              // порт подключения центрального ИК датчика линии
-byte rightLineSensor = A2;               // порт подключения правого ИК датчика линии
-int lineSensorNum = 0;                   // переменная для выбора датчика в режиме "Linetracer 1"
-//----------------------- описание меню ----------------------------------
+byte leftLineSensor = A0;                                     // порт подключения левого ИК датчика линии
+byte centreLineSensor = A1;                                   // порт подключения центрального ИК датчика линии
+byte rightLineSensor = A2;                                    // порт подключения правого ИК датчика линии
+byte sensorLabels[] = {0b01111111, 0b01011110, 0b01111110};   // значки для указания датчика - левый/центр/правый
+int lineSensorNum = 0;                                        // переменная для выбора датчика в режиме "Linetracer 1"
+//----------------------- описание меню ----------------------------------------------
 String mainMenuItems[] = {"Left turn", "Right turn", "Circle turn", \
                           "Forward(sec)", "Linetracer 1", "Linetracer 2", \
                           "Linetracer 3", "Around wall", "Bluetooth robot", \
-                          "Calib.lineSensor", "Set M speed", "Set distance", "Set brightness", \
+                          "Cal.lineSensor", "Set M speed", "Set distance", "Set brightness", \
                           "Set k filter"
                          };                                                       // пункты основного меню
 byte mainMenuSize = sizeof(mainMenuItems) / sizeof(String) - 1;                   // размер (кол-во строк) основного меню (-1 так как счет с 0)
@@ -117,13 +118,17 @@ bool lcdDrawFlag = true;                                                        
 
 unsigned int refreshLcdTime = 500;                                                // период обновления дисплея
 unsigned int lastRefreshLcd = 0;                                                  // время предыдущего обновления
-
-// ------------------------- Подменю Calibration lineSensor ----------------------
-String lineSensorMenuItems[] = {"Mode"};                                          // пункты меню Calibration lineSensor
-byte lineSensorMenuSize = sizeof(lineSensorMenuItems) / sizeof(String) - 1;                   // размер (кол-во строк) меню Calibration lineSensor (-1 так как счет с 0)
+int mainMenuCounter = 0;                                                          // счетчик позиции основного меню
+// ------------------------- Подменю Calibration lineSensor --------------------------
+String lineSensorMenuItems[] = {"Auto mode", "Manual mode"};                                          // пункты меню Calibration lineSensor
+byte lineSensorMenuSize = sizeof(lineSensorMenuItems) / sizeof(String) - 1;       // размер (кол-во строк) меню Calibration lineSensor (-1 так как счет с 0)
+// counter = 0 -> auto mode, counter = 1 -> (manual mode)
+int lineSensorMenuCounter = 0;                                                    // счетчик позиций подменю "Calibration lineSensor"
 //настройку уровней белого и черного будем производить по левому сенсору
-unsigned int whiteValue = 900;           // уровень отраженного света от белой поверхности
-unsigned int blackValue = 125;           // уровень отраженного света от черной поверхности
+unsigned long whiteValue = 900;                                                    // уровень отраженного света от белой поверхности
+unsigned long blackValue = 125;                                                    // уровень отраженного света от черной поверхности
+byte lineSensorThreshold = 25;                                                     // добавка к уровням белого и черного
+unsigned long lineThresholdValue = 0;                                               // порог принятия решения белый/черный для движения по линии
 /*
    флаги для всех подпунктов меню корневого уровня
 */
@@ -141,25 +146,26 @@ bool setSpeedMenuFlag = false;
 bool setDistMenuFlag = false;
 bool setBrightnessMenuFlag = false;         // флаг меню установки яркости дисплея
 bool setKFilterMenuFlag = false;
-int mainMenuCounter = 0;                    // счетчик позиции основного меню
-//----------------------- описание меню ----------------------------------
-//----------------------- заставки дисплея -------------------------------
+//----------------------- описание меню -----------------------------------------------
+//----------------------- заставки дисплея --------------------------------------------
 int stringSnow[16];                         // массив снежинок
 int SNOW_SPEED = 150;                       // скорость снегопада для заставки
 unsigned long lastActionMillis = 0;         // время последнего действия для запуска заставки
-//----------------------- заставки дисплея -------------------------------
+//----------------------- заставки дисплея --------------------------------------------
 
 void setup() {
-  EEPROM.writeFloat(addressFilter, k);
-  EEPROM.writeFloat(addressBrightness, lcdBrightness);
-  EEPROM.writeFloat(addressDistance, setDistance);
-  EEPROM.writeFloat(addressMotorSpeed, setMotorSpeed);
-  EEPROM.writeFloat(addressForwardSec, setForwardSec);
+  // запись в EEPROM
+  /*EEPROM.writeFloat(addressFilter, k);
+    EEPROM.writeFloat(addressBrightness, lcdBrightness);
+    EEPROM.writeFloat(addressDistance, setDistance);
+    EEPROM.writeFloat(addressMotorSpeed, setMotorSpeed);
+    EEPROM.writeFloat(addressForwardSec, setForwardSec);*/
   k = EEPROM.readFloat(addressFilter);
-  lcdBrightness = EEPROM.readByte(addressBrightness);
-  setDistance = EEPROM.readByte(addressDistance);
-  setMotorSpeed = EEPROM.readByte(addressMotorSpeed);
-  setForwardSec = EEPROM.readByte(addressForwardSec);
+  lcdBrightness = int(EEPROM.readFloat(addressBrightness));
+  setDistance = int(EEPROM.readFloat(addressDistance));
+  setMotorSpeed = int(EEPROM.readFloat(addressMotorSpeed));
+  setForwardSec = int(EEPROM.readFloat(addressForwardSec));
+  lineSensorThreshold = int(EEPROM.readFloat(addressLineSensorThresholdValue));
   pinMode(butCentrePin, INPUT);
   pinMode(butLeftPin, INPUT);
   pinMode(butRightPin, INPUT);
@@ -190,7 +196,6 @@ void setup() {
 }
 
 
-
 void loop() {
   while (1) {
     //------------------ заставка -----------------------------------
@@ -204,8 +209,6 @@ void loop() {
       lastButTime = millis();
     }
     //----------------- опрос кнопки --------------------------------
-
-    // придумать заставку "Снег" - случайные полоски в случайных местах дисплея
 
     // отрисовка основного меню
     if (mainMenuFlag and lcdDrawFlag) {
@@ -227,6 +230,17 @@ void loop() {
           mainMenuCounter--;
         }
       }
+
+      // действия в меню "Calibration lineSensor"
+      if (setLineSensorMenuFlag) {
+        if (lineSensorMenuCounter == 0) {
+          lineSensorMenuCounter = lineSensorMenuSize;
+        } else {
+          lineSensorMenuCounter--;
+        }
+        lcdDrawFlag = true;
+      }
+
       // действия в меню "Установка яркости дисплея"
       if (setBrightnessMenuFlag) {
         lcdBrightness -= 5;
@@ -282,6 +296,16 @@ void loop() {
         }
       }
 
+      // действия в меню "Calibration lineSensor"
+      if (setLineSensorMenuFlag) {
+        if (lineSensorMenuCounter == lineSensorMenuSize) {
+          lineSensorMenuCounter = 0;
+        } else {
+          lineSensorMenuCounter++;
+        }
+        lcdDrawFlag = true;
+      }
+
       // действия в меню "Установка яркости дисплея"
       if (setBrightnessMenuFlag) {
         lcdBrightness += 5;
@@ -323,13 +347,27 @@ void loop() {
       }
     }
 
-    // дейтствия при коротком нажатии центральной кнопки
+    //------------------------ SHORT PRESS CENTRAL BUTTON -------------------------------------
     if (butIsShort) {
       lastActionMillis = millis();
       // действия основного меню
       if (mainMenuFlag) {
         takeSubMenu();
         mainMenuFlag = false;
+        lcdDrawFlag = true;
+        goto END;
+      }
+
+      // действия в меню "Calibration lineSensor"
+      if (setLineSensorMenuFlag) {
+        switch (lineSensorMenuCounter) {
+          case 0:
+            autoModeLineSensor();
+            break;
+          case 1:
+            manualModeLineSensor();
+            break;
+        }
         lcdDrawFlag = true;
         goto END;
       }
@@ -373,6 +411,7 @@ void loop() {
 END:
       butIsShort = false;
     }
+    //------------------------ SHORT PRESS CENTRAL BUTTON -------------------------------------
 
     // отрисовка общего меню для элементов Left, Right, Circle, LinetracerN, Around wall and Bluetooth robot
     if ((leftTurnMenuFlag or rightTurnMenuFlag or circleTurnMenuFlag or line2MenuFlag or line3MenuFlag or wallMenuFlag or bluetoothMenuFlag) and lcdDrawFlag) {
@@ -425,6 +464,12 @@ END:
       lcdDrawFlag = false;
     }
 
+    // отрисовка меню "Calibration lineSensor"
+    if (setLineSensorMenuFlag and lcdDrawFlag) {
+      setLineSensorMenu();
+      lcdDrawFlag = false;
+    }
+
     // отрисовка меню "Настройка яркости дисплея"
     if (setBrightnessMenuFlag and lcdDrawFlag) {
       setBrightnessMenu();
@@ -455,7 +500,7 @@ END:
       lcdDrawFlag = false;
     }
 
-    // длинное нажатие - вход в основное меню или выход из подменю
+    //------------------------ LONG PRESS CENTRAL BUTTON -------------------------------------
     if (butIsLong) {
       lastActionMillis = millis();  // обновляем таймер действия, чтобы не уйти в заставку
       butIsLong = false;
@@ -479,6 +524,7 @@ END:
       analogWrite(leftMotorPwmPin, 0);
       analogWrite(rightMotorPwmPin, 0);
     }
+    //------------------------ LONG PRESS CENTRAL BUTTON -------------------------------------
   }
 }
 
@@ -558,6 +604,124 @@ void mainMenuDraw() {
   lcd.print(mainMenuItems[mainMenuCounter]);
   lcd.setCursor(1, 1);
   lcd.print(mainMenuItems[nextItem]);
+}
+
+// функция автоматической настройки порога белый/черный
+void autoModeLineSensor() {
+  lastActionMillis = millis();
+  lcd.setCursor(1, 0);
+  lcd.print("Auto calibrate");
+  lcd.setCursor(1, 1);
+  lcd.print("Set white");                             // начинаем калибровку по белому цвету, необходимо в течении 5 секунд поднести датчики к белому
+  lcd.setCursor(12, 1);
+  unsigned long timer0 = millis();
+  byte cnt = 0;
+  while (millis() - timer0 < 6000) {
+    lcd.setCursor(12, 1);
+    lcd.print(cnt++);
+    delay(1000);
+  }
+  lastActionMillis = millis();
+  lcd.setCursor(0, 1);
+  lcd.print("                ");
+  unsigned long meanValue[] = {0, 0, 0};              // начинаем процесс калибровки, десять раз считываем значение с каждого датчика и усредняем
+  for (int sensor = 0; sensor < 3; sensor++) {
+    lcd.setCursor(sensor * 5 + 1, 1);
+    lcd.printByte(sensorLabels[sensor]);
+    for (int sample = 0; sample < 10; sample++) {
+      meanValue[sensor] += analogRead(sensor);
+      delay(200);
+    }
+    lcd.setCursor(sensor * 5 + 2, 1);
+    lcd.print(int(meanValue[sensor] / 10.0));
+  }
+  delay(2000);
+  // ищем максимальное значение
+  int maxValueSensor = 0;
+  for (int i = 0; i < 3; i++) {
+    meanValue[i] = int(meanValue[i] / 10.0);
+    if (meanValue[i] > maxValueSensor) {
+      maxValueSensor = meanValue[i];
+    }
+  }
+
+  whiteValue = maxValueSensor + lineSensorThreshold;  // добавляем к уровню белого небольшой запас
+  lcd.setCursor(0, 1);
+  lcd.print("                ");
+  lcd.setCursor(1, 1);
+  lcd.print("whiteValue");
+  lcd.setCursor(12, 1);
+  lcd.print(whiteValue);
+  lastActionMillis = millis();
+  delay(2000);
+
+  // калибровка по черному
+  lcd.setCursor(0, 1);
+  lcd.print("                ");
+  lcd.setCursor(1, 1);
+  lcd.print("Set black");
+  lcd.setCursor(12, 1);
+  timer0 = millis();
+  cnt = 0;
+  while (millis() - timer0 < 6000) {
+    lcd.setCursor(12, 1);
+    lcd.print(cnt++);
+    delay(1000);
+  }
+  lastActionMillis = millis();
+  lcd.setCursor(0, 1);
+  lcd.print("                ");
+  for (int i = 0; i < 3; i++) {
+    meanValue[i] = 0;
+  }
+  for (int sensor = 0; sensor < 3; sensor++) {
+    lcd.setCursor(sensor * 5 + 1, 1);
+    lcd.printByte(sensorLabels[sensor]);
+    for (int sample = 0; sample < 10; sample++) {
+      meanValue[sensor] += analogRead(sensor);
+      delay(200);
+    }
+    lcd.setCursor(sensor * 5 + 2, 1);
+    lcd.print(int(meanValue[sensor] / 10.0));
+  }
+  delay(2000);
+  // ищем максимальное значение
+  int minValueSensor = 1023;
+  for (int i = 0; i < 3; i++) {
+    meanValue[i] = int(meanValue[i] / 10.0);
+    if (meanValue[i] < minValueSensor) {
+      minValueSensor = meanValue[i];
+    }
+  }
+
+  blackValue = minValueSensor - lineSensorThreshold;  // вычитаем небольшой запас из уровня черного
+  lcd.setCursor(0, 1);
+  lcd.print("                ");
+  lcd.setCursor(1, 1);
+  lcd.print("blackValue");
+  lcd.setCursor(12, 1);
+  lcd.print(blackValue);
+  lastActionMillis = millis();
+  delay(2000);
+
+  // вычисляем порог принятия решения белый/черный
+  lineThresholdValue = int(whiteValue + (blackValue - whiteValue) / 2.0);
+  lcd.setCursor(0, 1);
+  lcd.print("                ");
+  lcd.setCursor(1, 1);
+  lcd.print("Threshold");
+  lcd.setCursor(12, 1);
+  lcd.print(lineThresholdValue);
+  EEPROM.writeFloat(addressLineSensorThresholdValue, lineThresholdValue);
+  lastActionMillis = millis();
+  delay(2000);
+  setLineSensorMenuFlag = true;
+  lcdDrawFlag = true;
+}
+
+// функция ручной настройки порога белый/черный
+void manualModeLineSensor() {
+
 }
 
 /*
@@ -642,7 +806,6 @@ void forwardMenu() {
 
 // функция "Linetracer 1"
 void line1Menu() {
-  byte sensorLabels[] = {0b01111111, 0b01011110, 0b01111110};
   lcd.clear();
   lcd.setCursor(1, 0);
   lcd.print(mainMenuItems[mainMenuCounter]);
@@ -668,6 +831,15 @@ void line1Menu() {
     sensorFilter.setLast(sampleFiltered);
   }
   lcd.print(int(sampleFiltered));
+}
+
+// функция отрисовки "Настройка порога белый/черный для датчиков линии"
+void setLineSensorMenu() {
+  lcd.clear();
+  lcd.setCursor(1, 0);
+  lcd.print(mainMenuItems[mainMenuCounter]);
+  lcd.setCursor(1, 1);
+  lcd.print(lineSensorMenuItems[lineSensorMenuCounter]);
 }
 
 // функция отрисовки "Настройка яркости дисплея"
