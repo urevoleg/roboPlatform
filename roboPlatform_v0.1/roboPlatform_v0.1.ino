@@ -642,7 +642,7 @@ void autoModeLineSensor() {
     lcd.print(cnt++);
     delay(1000);
   }
-  lastActionMillis = millis();
+  //lastActionMillis = millis();
   lcd.setCursor(0, 1);
   lcd.print("                ");
   unsigned long meanValue[] = {0, 0, 0};              // начинаем процесс калибровки, десять раз считываем значение с каждого датчика и усредняем
@@ -673,7 +673,7 @@ void autoModeLineSensor() {
   lcd.print("whiteValue");
   lcd.setCursor(12, 1);
   lcd.print(whiteValue);
-  lastActionMillis = millis();
+  //lastActionMillis = millis();
   delay(2000);
 
   // калибровка по черному
@@ -689,7 +689,7 @@ void autoModeLineSensor() {
     lcd.print(cnt++);
     delay(1000);
   }
-  lastActionMillis = millis();
+  //lastActionMillis = millis();
   lcd.setCursor(0, 1);
   lcd.print("                ");
   for (int i = 0; i < 3; i++) {
@@ -722,7 +722,7 @@ void autoModeLineSensor() {
   lcd.print("blackValue");
   lcd.setCursor(12, 1);
   lcd.print(blackValue);
-  lastActionMillis = millis();
+  //lastActionMillis = millis();
   delay(2000);
 
   // вычисляем порог принятия решения белый/черный
@@ -734,7 +734,7 @@ void autoModeLineSensor() {
   lcd.setCursor(12, 1);
   lcd.print(lineSensorThresholdValue);
   EEPROM.writeFloat(addressLineSensorThresholdValue, lineSensorThresholdValue);
-  lastActionMillis = millis();
+  //lastActionMillis = millis();
   delay(2000);
   setLineSensorMenuFlag = true;
   lcdDrawFlag = true;
