@@ -17,7 +17,7 @@ byte addressBrightness = 5;                // занимает 4Б
 byte addressDistance = 10;                 // занимает 4Б
 byte addressMotorSpeed = 15;               // занимает 4Б
 byte addressForwardSec = 20;               // занимает 4Б
-byte addressLineSensorThresholdValue = 25;      // занимает 4Б
+byte addressLineSensorThresholdValue = 25; // занимает 4Б
 //--------------------- EEPROM ------------------------------------------------------
 //--------------------- Simple lowpass ----------------------------------------------
 #include <MeanFilter.h>
@@ -127,11 +127,11 @@ int lineSensorMenuCounter = 0;                                                  
 //настройку уровней белого и черного будем производить по левому сенсору
 unsigned long whiteValue = 900;                                                    // уровень отраженного света от белой поверхности
 unsigned long blackValue = 125;                                                    // уровень отраженного света от черной поверхности
-byte lineSensorThreshold = 25;                                                     // добавка к уровням белого и черного
-unsigned long lineThresholdValue = 0;                                               // порог принятия решения белый/черный для движения по линии
-/*
-   флаги для всех подпунктов меню корневого уровня
-*/
+byte lineSensorOffset = 25;                                                     // добавка к уровням белого и черного
+unsigned long lineSensorThresholdValue = 0;                                              // порог принятия решения белый/черный для движения по линии
+bool manualModeLineSensorMenuFlag = false;                                         // флаг ручной настройки порога белый/черный
+
+// флаги для всех подпунктов меню корневого уровня
 bool leftTurnMenuFlag = false;
 bool rightTurnMenuFlag = false;
 bool circleTurnMenuFlag = false;
@@ -165,7 +165,7 @@ void setup() {
   setDistance = int(EEPROM.readFloat(addressDistance));
   setMotorSpeed = int(EEPROM.readFloat(addressMotorSpeed));
   setForwardSec = int(EEPROM.readFloat(addressForwardSec));
-  lineSensorThreshold = int(EEPROM.readFloat(addressLineSensorThresholdValue));
+  lineSensorThresholdValue = int(EEPROM.readFloat(addressLineSensorThresholdValue));
   pinMode(butCentrePin, INPUT);
   pinMode(butLeftPin, INPUT);
   pinMode(butRightPin, INPUT);
@@ -241,6 +241,12 @@ void loop() {
         lcdDrawFlag = true;
       }
 
+      // действия в подменю "Calibration lineSensor: Manual mode"
+      if (setLineSensorMenuFlag && manualModeLineSensorMenuFlag) {
+        lineSensorThresholdValue -= 5;
+        lcdDrawFlag = true;
+      }
+
       // действия в меню "Установка яркости дисплея"
       if (setBrightnessMenuFlag) {
         lcdBrightness -= 5;
@@ -306,6 +312,12 @@ void loop() {
         lcdDrawFlag = true;
       }
 
+      // действия в подменю "Calibration lineSensor: Manual mode"
+      if (setLineSensorMenuFlag && manualModeLineSensorMenuFlag) {
+        lineSensorThresholdValue += 5;
+        lcdDrawFlag = true;
+      }
+
       // действия в меню "Установка яркости дисплея"
       if (setBrightnessMenuFlag) {
         lcdBrightness += 5;
@@ -365,9 +377,17 @@ void loop() {
             autoModeLineSensor();
             break;
           case 1:
+            manualModeLineSensorMenuFlag = true;
             manualModeLineSensor();
             break;
         }
+        lcdDrawFlag = true;
+        goto END;
+      }
+
+      // действия в подменю "Calibration lineSensor: Manual mode"
+      if (setLineSensorMenuFlag and manualModeLineSensorMenuFlag) {
+        saveSettings(addressLineSensorThresholdValue, lineSensorThresholdValue);
         lcdDrawFlag = true;
         goto END;
       }
@@ -608,9 +628,10 @@ void mainMenuDraw() {
 
 // функция автоматической настройки порога белый/черный
 void autoModeLineSensor() {
-  lastActionMillis = millis();
+  //lastActionMillis = millis();
+  lcd.clear();
   lcd.setCursor(1, 0);
-  lcd.print("Auto calibrate");
+  lcd.print(lineSensorMenuItems[lineSensorMenuCounter]);
   lcd.setCursor(1, 1);
   lcd.print("Set white");                             // начинаем калибровку по белому цвету, необходимо в течении 5 секунд поднести датчики к белому
   lcd.setCursor(12, 1);
@@ -632,8 +653,8 @@ void autoModeLineSensor() {
       meanValue[sensor] += analogRead(sensor);
       delay(200);
     }
-    lcd.setCursor(sensor * 5 + 2, 1);
-    lcd.print(int(meanValue[sensor] / 10.0));
+    lcd.setCursor(sensor * 5 + 2, 1);                // выводим позицию датчика
+    lcd.print(int(meanValue[sensor] / 10.0));        // среднее значение уровня для данного датчика
   }
   delay(2000);
   // ищем максимальное значение
@@ -645,7 +666,7 @@ void autoModeLineSensor() {
     }
   }
 
-  whiteValue = maxValueSensor + lineSensorThreshold;  // добавляем к уровню белого небольшой запас
+  whiteValue = maxValueSensor + lineSensorOffset;  // добавляем к уровню белого небольшой запас
   lcd.setCursor(0, 1);
   lcd.print("                ");
   lcd.setCursor(1, 1);
@@ -694,7 +715,7 @@ void autoModeLineSensor() {
     }
   }
 
-  blackValue = minValueSensor - lineSensorThreshold;  // вычитаем небольшой запас из уровня черного
+  blackValue = minValueSensor - lineSensorOffset;  // вычитаем небольшой запас из уровня черного
   lcd.setCursor(0, 1);
   lcd.print("                ");
   lcd.setCursor(1, 1);
@@ -705,14 +726,14 @@ void autoModeLineSensor() {
   delay(2000);
 
   // вычисляем порог принятия решения белый/черный
-  lineThresholdValue = int(whiteValue + (blackValue - whiteValue) / 2.0);
+  lineSensorThresholdValue = int(whiteValue + (blackValue - whiteValue) / 2.0);
   lcd.setCursor(0, 1);
   lcd.print("                ");
   lcd.setCursor(1, 1);
   lcd.print("Threshold");
   lcd.setCursor(12, 1);
-  lcd.print(lineThresholdValue);
-  EEPROM.writeFloat(addressLineSensorThresholdValue, lineThresholdValue);
+  lcd.print(lineSensorThresholdValue);
+  EEPROM.writeFloat(addressLineSensorThresholdValue, lineSensorThresholdValue);
   lastActionMillis = millis();
   delay(2000);
   setLineSensorMenuFlag = true;
@@ -721,7 +742,13 @@ void autoModeLineSensor() {
 
 // функция ручной настройки порога белый/черный
 void manualModeLineSensor() {
-
+  lcd.clear();
+  lcd.setCursor(1, 0);
+  lcd.print(lineSensorMenuItems[lineSensorMenuCounter]);
+  lcd.setCursor(1, 1);
+  lcd.print("Threshold");
+  lcd.setCursor(12, 1);
+  lcd.print(lineSensorThresholdValue);
 }
 
 /*
@@ -770,7 +797,44 @@ void forwardRobot() {
 
 // робот "Линия с 1 датчиком"
 void line1Robot() {
-
+  bool sensor1Value = analogRead(lineSensorNum);
+  if (sensor1Value < lineSensorThresholdValue) {
+    switch (lineSensorNum) {
+      case 0:
+        digitalWrite(leftMotorDirPin, HIGH);
+        analogWrite(leftMotorPwmPin, map(setMotorSpeed, 0, 100, 0, 255));
+        analogWrite(rightMotorPwmPin, 0);
+        break;
+      case 1:
+        digitalWrite(leftMotorDirPin, HIGH);
+        analogWrite(leftMotorPwmPin, map(setMotorSpeed, 0, 100, 0, 255));
+        analogWrite(rightMotorPwmPin, 0);
+        break;
+      case 2:
+        analogWrite(leftMotorPwmPin, 0);
+        digitalWrite(rightMotorDirPin, HIGH);
+        analogWrite(rightMotorPwmPin, map(setMotorSpeed, 0, 100, 0, 255));
+        break;
+    }
+  } else {
+    switch (lineSensorNum) {
+      case 0:
+        analogWrite(leftMotorPwmPin, 0);
+        digitalWrite(rightMotorDirPin, HIGH);
+        analogWrite(rightMotorPwmPin, map(setMotorSpeed, 0, 100, 0, 255));
+        break;
+      case 1:
+        analogWrite(leftMotorPwmPin, 0);
+        digitalWrite(rightMotorDirPin, HIGH);
+        analogWrite(rightMotorPwmPin, map(setMotorSpeed, 0, 100, 0, 255));
+        break;
+      case 2:
+        digitalWrite(leftMotorDirPin, HIGH);
+        analogWrite(leftMotorPwmPin, map(setMotorSpeed, 0, 100, 0, 255));
+        analogWrite(rightMotorPwmPin, 0);
+        break;
+    }
+  }
 }
 
 // робот "Линия с 2 датчиками"
@@ -822,15 +886,7 @@ void line1Menu() {
   }
   lcd.printByte(sensorLabels[lineSensorNum]);
   lcd.setCursor(3, 1);
-  lcd.print("value");
-  lcd.setCursor(10, 1);
-  int sampleFiltered = 0;
-  for (byte i = 0; i < 10; i++) {
-    int sample = analogRead(lineSensorNum);
-    sampleFiltered = sensorFilter.filterAVG(sample);
-    sensorFilter.setLast(sampleFiltered);
-  }
-  lcd.print(int(sampleFiltered));
+  lcd.print("sensor");
 }
 
 // функция отрисовки "Настройка порога белый/черный для датчиков линии"
