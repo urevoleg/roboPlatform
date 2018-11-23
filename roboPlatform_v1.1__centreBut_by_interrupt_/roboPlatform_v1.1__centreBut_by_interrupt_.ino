@@ -894,7 +894,78 @@ void line2Robot() {
 
 // робот "Линия с 3 датчиками"
 void line3Robot() {
+  lastActionMillis = millis();
+  int sampleLeft = analogRead(0);
+  int sampleLeftFiltered = leftFilter.filterAVG(sampleLeft);
+  leftFilter.setLast(sampleLeftFiltered);
+  int sampleRight = analogRead(2);
+  int sampleRightFiltered = rightFilter.filterAVG(sampleRight);
+  rightFilter.setLast(sampleRightFiltered);
+  int sampleCentre = analogRead(1);
+  int sampleCentreFiltered = centreFilter.filterAVG(sampleCentre);
+  centreFilter.setLast(sampleCentreFiltered);
+  byte controlByte = 0b000;
 
+  if (sampleLeftFiltered > lineSensorThresholdValue) {
+    bitSet(controlByte, 2);
+  } else {
+    bitClear(controlByte, 2);
+  }
+  if (sampleCentreFiltered > lineSensorThresholdValue) {
+    bitSet(controlByte, 1);
+  } else {
+    bitClear(controlByte, 1);
+  }
+  if (sampleRightFiltered > lineSensorThresholdValue) {
+    bitSet(controlByte, 0);
+  } else {
+    bitClear(controlByte, 0);
+  }
+
+  switch (controlByte) {
+    case 0b000:   // все датчики на белом
+      break;
+
+    case 0b001:   // линия справа - левый мотор работает
+      analogWrite(rightMotorPwmPin, 0);
+      digitalWrite(leftMotorDirPin, HIGH);
+      analogWrite(leftMotorPwmPin, map(setMotorSpeed, 0, 100, 0, 255));
+      break;
+
+    case 0b010:   // линия по центру
+      digitalWrite(rightMotorDirPin, HIGH);
+      analogWrite(rightMotorPwmPin, map(setMotorSpeed, 0, 100, 0, 255));
+      digitalWrite(leftMotorDirPin, HIGH);
+      analogWrite(leftMotorPwmPin, map(setMotorSpeed, 0, 100, 0, 255));
+      break;
+
+    case 0b011:   // линия ушла немного вправо
+      digitalWrite(rightMotorDirPin, HIGH);
+      analogWrite(rightMotorPwmPin, map(setMotorSpeed, 0, 100, 0, 200));
+      digitalWrite(leftMotorDirPin, HIGH);
+      analogWrite(leftMotorPwmPin, map(setMotorSpeed, 0, 100, 0, 255));
+      break;
+
+    case 0b100:   // линия слева - работает правый мотор
+      analogWrite(leftMotorPwmPin, 0);
+      digitalWrite(rightMotorDirPin, HIGH);
+      analogWrite(rightMotorPwmPin, map(setMotorSpeed, 0, 100, 0, 255));
+      break;
+
+    case 0b101:   // не используется
+      break;
+
+    case 0b110:   // линия ушла немного влево
+      digitalWrite(rightMotorDirPin, HIGH);
+      analogWrite(rightMotorPwmPin, map(setMotorSpeed, 0, 100, 0, 255));
+      digitalWrite(leftMotorDirPin, HIGH);
+      analogWrite(leftMotorPwmPin, map(setMotorSpeed, 0, 100, 0, 200));
+
+      break;
+
+    case 0b111:   // не используется
+      break;
+  }
 }
 
 // робот "Объезд препятствий"
